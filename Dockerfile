@@ -1,25 +1,23 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    wget curl unzip gnupg2 \
-    chromium chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
-
-# Create app directory
 WORKDIR /app
 
-# Copy files
-COPY . /app
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# Install required system packages for Chrome and Selenium
+RUN apt-get update && apt-get install -y \
+    wget gnupg unzip curl fonts-liberation \
+    libasound2 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdbus-1-3 libgdk-pixbuf2.0-0 \
+    libnspr4 libnss3 libx11-xcb1 libxcomposite1 \
+    libxdamage1 libxrandr2 xdg-utils libgbm1 libgtk-3-0 \
+    chromium chromium-driver && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy entrypoint
-RUN chmod +x /app/entrypoint.sh
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
 
 EXPOSE 5000
-CMD ["/app/entrypoint.sh"]
+
+CMD ["python", "app.py"]
