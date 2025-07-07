@@ -18,7 +18,6 @@ def extract_video_link():
         return jsonify({'error': 'Invalid Terabox link'}), 400
 
     try:
-        # Extract file code from the link
         match = re.search(r'surl=([a-zA-Z0-9_-]+)', link)
         if not match:
             return jsonify({'error': 'Invalid link format'}), 400
@@ -40,7 +39,6 @@ def extract_video_link():
         file_info = json_data['list'][0]
         fs_id = file_info['fs_id']
 
-        # Get direct download link
         dlink_api = f'https://www.terabox.com/share/download?app_id=250528&shorturl={surl}&fs_id={fs_id}'
         download_response = requests.get(dlink_api, headers=headers)
         if download_response.status_code != 200:
@@ -60,7 +58,6 @@ def extract_video_link():
 
     except Exception as e:
         return jsonify({'error': f'Exception occurred: {str(e)}'}), 500
-
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
