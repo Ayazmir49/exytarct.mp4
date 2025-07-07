@@ -7,7 +7,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import re
-import os
 
 app = Flask(__name__)
 
@@ -17,34 +16,30 @@ def get_terabox_link():
     share_url = data.get('link')
 
     if not share_url or not share_url.startswith('http'):
-        return jsonify({'error': 'Invalid or missing link'}), 400
+        return jsonify({'error': 'Invalid link'}), 400
 
     try:
-        # Chrome options for headless browsing
+        # Headless Chrome options
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
 
-        # ChromeDriver path (env var fallback)
-        chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "chromedriver")
-        service = Service(chromedriver_path)
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-
-        # Load the shared Terabox link
+        # Start Chrome
+        driver = webdriver.Chrome(options=chrome_options)
         driver.get(share_url)
 
-        # Wait for the page to load and video content to appear
-        WebDriverWait(driver, 20).until(
-            lambda d: "download" in d.page_source or ".mp4" in d.page_source
+        # Wait for the page to load
+        WebDriverWait(driver, 15).until(
+            lambda d: "download" in d.page_source
         )
 
         page_source = driver.page_source
         title = driver.title or 'Terabox Video'
 
-        # Try to extract .mp4 link via regex
-        match = re.search(r'https://download[^"]+\.mp4', page_source, re.IGNORECASE)
+        # Extract .mp4 download link
+        match = re.search(r'https://download[^"]+\.mp4', page_source)
         dlink = match.group(0) if match else None
 
         driver.quit()
@@ -57,17 +52,12 @@ def get_terabox_link():
             'qualities': {
                 'Auto': dlink
             },
-            'isPremium': False,
-            'source': share_url
+            'isPremium': False
         })
 
     except Exception as e:
-        try:
-            driver.quit()
-        except:
-            pass
         return jsonify({'error': f'Exception occurred: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
