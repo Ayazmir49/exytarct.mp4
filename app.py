@@ -1,79 +1,67 @@
 from flask import Flask, request, jsonify
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
 import re
-import time
 import os
 
 app = Flask(__name__)
 
 @app.route('/')
-def home():
-    return 'Terabox Extractor API is running.'
+def index():
+    return "Terabox Extractor API is Live"
 
 @app.route('/terabox', methods=['POST'])
-def get_terabox_link():
+def extract_video_link():
     data = request.get_json()
-    share_url = data.get('link')
+    link = data.get('link')
 
-    if not share_url or not share_url.startswith('http'):
-        return jsonify({'error': 'Invalid link'}), 400
+    if not link or "terabox.com" not in link:
+        return jsonify({'error': 'Invalid Terabox link'}), 400
 
     try:
-        # Setup Chrome options for headless browser
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+        # Extract file code from the link
+        match = re.search(r'surl=([a-zA-Z0-9_-]+)', link)
+        if not match:
+            return jsonify({'error': 'Invalid link format'}), 400
 
-        # Setup Chrome driver
-        driver = webdriver.Chrome(options=chrome_options)
+        surl = match.group(1)
+        share_url = f'https://www.terabox.com/share/list?app_id=250528&shorturl={surl}&root=1'
 
-        # Open the shared Terabox link
-        driver.get(share_url)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Referer': link
+        }
 
-        print("Opened URL:", share_url)
+        response = requests.get(share_url, headers=headers)
+        json_data = response.json()
 
-        # Wait for up to 20 seconds until the video tag or download link appears
-        WebDriverWait(driver, 20).until(
-            lambda d: ".mp4" in d.page_source
-        )
+        if 'list' not in json_data or not json_data['list']:
+            return jsonify({'error': 'File list not found'}), 404
 
-        page_source = driver.page_source
-        title = driver.title or 'Terabox Video'
+        file_info = json_data['list'][0]
+        fs_id = file_info['fs_id']
 
-        print("Page loaded. Looking for .mp4 link...")
+        # Get direct download link
+        dlink_api = f'https://www.terabox.com/share/download?app_id=250528&shorturl={surl}&fs_id={fs_id}'
+        download_response = requests.get(dlink_api, headers=headers)
+        if download_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch download link'}), 500
 
-        # Extract .mp4 download link using regex
-        match = re.search(r'https://[^"]+\.mp4[^"]*', page_source)
-        dlink = match.group(0) if match else None
-
-        driver.quit()
-
-        if not dlink:
-            print("No .mp4 link found.")
+        video_link = re.search(r'https://download[^"]+\.mp4', download_response.text)
+        if not video_link:
             return jsonify({'error': 'Video link not found'}), 404
 
-        print("Video link found:", dlink)
-
         return jsonify({
-            'title': title,
+            'title': file_info.get('server_filename', 'Terabox Video'),
             'qualities': {
-                'Auto': dlink
+                'Auto': video_link.group(0)
             },
             'isPremium': False
         })
 
     except Exception as e:
-        print("Exception occurred:", str(e))
         return jsonify({'error': f'Exception occurred: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
