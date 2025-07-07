@@ -5,10 +5,15 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
 import re
+import time
+import os
 
 app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return 'Terabox Extractor API is running.'
 
 @app.route('/terabox', methods=['POST'])
 def get_terabox_link():
@@ -19,33 +24,42 @@ def get_terabox_link():
         return jsonify({'error': 'Invalid link'}), 400
 
     try:
-        # Headless Chrome options
+        # Setup Chrome options for headless browser
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
 
-        # Start Chrome
+        # Setup Chrome driver
         driver = webdriver.Chrome(options=chrome_options)
+
+        # Open the shared Terabox link
         driver.get(share_url)
 
-        # Wait for the page to load
-        WebDriverWait(driver, 15).until(
-            lambda d: "download" in d.page_source
+        print("Opened URL:", share_url)
+
+        # Wait for up to 20 seconds until the video tag or download link appears
+        WebDriverWait(driver, 20).until(
+            lambda d: ".mp4" in d.page_source
         )
 
         page_source = driver.page_source
         title = driver.title or 'Terabox Video'
 
-        # Extract .mp4 download link
-        match = re.search(r'https://download[^"]+\.mp4', page_source)
+        print("Page loaded. Looking for .mp4 link...")
+
+        # Extract .mp4 download link using regex
+        match = re.search(r'https://[^"]+\.mp4[^"]*', page_source)
         dlink = match.group(0) if match else None
 
         driver.quit()
 
         if not dlink:
+            print("No .mp4 link found.")
             return jsonify({'error': 'Video link not found'}), 404
+
+        print("Video link found:", dlink)
 
         return jsonify({
             'title': title,
@@ -56,8 +70,10 @@ def get_terabox_link():
         })
 
     except Exception as e:
+        print("Exception occurred:", str(e))
         return jsonify({'error': f'Exception occurred: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
