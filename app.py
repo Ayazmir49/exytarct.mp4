@@ -4,39 +4,35 @@ import requests
 import re
 import os
 from urllib.parse import urlparse, parse_qs
-import logging
 
 app = Flask(__name__)
-CORS(app)  # Allow CORS for all routes
-logging.basicConfig(level=logging.INFO)
-
+CORS(app)
 
 @app.route('/')
 def index():
     return "Terabox Extractor API is Live"
 
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'ok'}), 200
-
-
 @app.route('/terabox', methods=['POST'])
 def extract_video_link():
+    data = request.get_json()
+    link = data.get('link')
+
+    if not link or "terabox.com" not in link:
+        return jsonify({'error': 'Invalid Terabox link'}), 400
+
     try:
-        data = request.get_json()
-        link = data.get('link')
-
-        if not link or "terabox.com" not in link:
-            logging.warning("Invalid Terabox link received")
-            return jsonify({'error': 'Invalid Terabox link'}), 400
-
+        # Extract surl from query params or path
         parsed_url = urlparse(link)
         query_params = parse_qs(parsed_url.query)
         surl = query_params.get('surl', [None])[0]
 
         if not surl:
-            logging.warning("Missing 'surl' in the link")
+            # Try to extract from path like /s/abcDEF
+            path_match = re.search(r'/s/([a-zA-Z0-9_-]+)', parsed_url.path)
+            if path_match:
+                surl = path_match.group(1)
+
+        if not surl:
             return jsonify({'error': 'Invalid link format'}), 400
 
         share_url = f'https://www.terabox.com/share/list?app_id=250528&shorturl={surl}&root=1'
@@ -49,8 +45,9 @@ def extract_video_link():
         response = requests.get(share_url, headers=headers)
         json_data = response.json()
 
+        print("DEBUG Terabox API Response:", json_data)  # <-- Debugging Log
+
         if 'list' not in json_data or not json_data['list']:
-            logging.error("File list not found for surl=%s", surl)
             return jsonify({'error': 'File list not found'}), 404
 
         file_info = json_data['list'][0]
@@ -60,15 +57,11 @@ def extract_video_link():
         download_response = requests.get(dlink_api, headers=headers)
 
         if download_response.status_code != 200:
-            logging.error("Failed to fetch download link from dlink_api")
             return jsonify({'error': 'Failed to fetch download link'}), 500
 
         video_link = re.search(r'https://download[^"]+\.mp4', download_response.text)
         if not video_link:
-            logging.error("Video link not found in download response")
             return jsonify({'error': 'Video link not found'}), 404
-
-        logging.info("Successfully extracted video link for surl=%s", surl)
 
         return jsonify({
             'title': file_info.get('server_filename', 'Terabox Video'),
@@ -79,7 +72,6 @@ def extract_video_link():
         })
 
     except Exception as e:
-        logging.exception("Exception occurred while extracting video link")
         return jsonify({'error': f'Exception occurred: {str(e)}'}), 500
 
 
