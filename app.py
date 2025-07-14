@@ -1,30 +1,42 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 import re
 import os
 from urllib.parse import urlparse, parse_qs
+import logging
 
 app = Flask(__name__)
+CORS(app)  # Allow CORS for all routes
+logging.basicConfig(level=logging.INFO)
+
 
 @app.route('/')
 def index():
     return "Terabox Extractor API is Live"
 
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'}), 200
+
+
 @app.route('/terabox', methods=['POST'])
 def extract_video_link():
-    data = request.get_json()
-    link = data.get('link')
-
-    if not link or "terabox.com" not in link:
-        return jsonify({'error': 'Invalid Terabox link'}), 400
-
     try:
-        # Extract `surl` from query params
+        data = request.get_json()
+        link = data.get('link')
+
+        if not link or "terabox.com" not in link:
+            logging.warning("Invalid Terabox link received")
+            return jsonify({'error': 'Invalid Terabox link'}), 400
+
         parsed_url = urlparse(link)
         query_params = parse_qs(parsed_url.query)
         surl = query_params.get('surl', [None])[0]
 
         if not surl:
+            logging.warning("Missing 'surl' in the link")
             return jsonify({'error': 'Invalid link format'}), 400
 
         share_url = f'https://www.terabox.com/share/list?app_id=250528&shorturl={surl}&root=1'
@@ -38,20 +50,25 @@ def extract_video_link():
         json_data = response.json()
 
         if 'list' not in json_data or not json_data['list']:
+            logging.error("File list not found for surl=%s", surl)
             return jsonify({'error': 'File list not found'}), 404
 
         file_info = json_data['list'][0]
         fs_id = file_info['fs_id']
 
-        # Get direct download link
         dlink_api = f'https://www.terabox.com/share/download?app_id=250528&shorturl={surl}&fs_id={fs_id}'
         download_response = requests.get(dlink_api, headers=headers)
+
         if download_response.status_code != 200:
+            logging.error("Failed to fetch download link from dlink_api")
             return jsonify({'error': 'Failed to fetch download link'}), 500
 
         video_link = re.search(r'https://download[^"]+\.mp4', download_response.text)
         if not video_link:
+            logging.error("Video link not found in download response")
             return jsonify({'error': 'Video link not found'}), 404
+
+        logging.info("Successfully extracted video link for surl=%s", surl)
 
         return jsonify({
             'title': file_info.get('server_filename', 'Terabox Video'),
@@ -62,6 +79,7 @@ def extract_video_link():
         })
 
     except Exception as e:
+        logging.exception("Exception occurred while extracting video link")
         return jsonify({'error': f'Exception occurred: {str(e)}'}), 500
 
 
